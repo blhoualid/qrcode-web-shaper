@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from "react";
 import QRCode from "qrcode";
-import * as XLSX from "xlsx";
 
 const PRESET_COLORS = [
   { name: "Noir", hex: "#000000" },
@@ -180,6 +179,9 @@ export default function BatchQRGenerator() {
     setError(null);
 
     try {
+      // Dynamic import of xlsx to avoid Next.js build issues
+      const XLSX = await import("xlsx");
+
       const data: { URL: string; QRCode: string }[] = [];
 
       for (const entry of validEntries) {
