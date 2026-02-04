@@ -79,7 +79,8 @@ export default function QRCodeGenerator() {
     text: string,
     color: string,
     size: number,
-    settings: HalfCircleSettings
+    settings: HalfCircleSettings,
+    transparent: boolean = false
   ) => {
     try {
       // Create QR code canvas
@@ -89,7 +90,7 @@ export default function QRCodeGenerator() {
         margin: 2,
         color: {
           dark: color,
-          light: "#ffffff",
+          light: transparent ? "#00000000" : "#ffffff",
         },
       });
 
@@ -109,9 +110,11 @@ export default function QRCodeGenerator() {
       const ctx = compositeCanvas.getContext("2d");
       if (!ctx) return null;
 
-      // Fill with white background
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, compositeSize, compositeSize);
+      // Fill with background (white for preview, transparent for download)
+      if (!transparent) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, compositeSize, compositeSize);
+      }
 
       // Draw QR code
       ctx.drawImage(qrCanvas, 0, 0);
@@ -176,7 +179,8 @@ export default function QRCodeGenerator() {
 
     try {
       const qrSize = 400;
-      const compositeCanvas = await generateCompositeQR(url, qrColor, qrSize, halfCircleSettings);
+      // Generate with transparent background for download
+      const compositeCanvas = await generateCompositeQR(url, qrColor, qrSize, halfCircleSettings, true);
       if (!compositeCanvas) {
         throw new Error("Failed to generate");
       }
@@ -191,9 +195,7 @@ export default function QRCodeGenerator() {
       const ctx = finalCanvas.getContext("2d");
       if (!ctx) return;
 
-      // Fill with white background
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, diagonal, diagonal);
+      // Keep transparent background (no fill)
 
       // Rotate -135 degrees (counter-clockwise) around center
       ctx.translate(diagonal / 2, diagonal / 2);
