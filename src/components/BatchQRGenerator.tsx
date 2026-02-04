@@ -95,7 +95,7 @@ function drawHalfCirclePattern(
     const hash = Math.sin(cell.x * 12.9898 + cell.y * 78.233) * 43758.5453;
     const shouldFill = (hash - Math.floor(hash)) > 0.45;
     if (shouldFill) {
-      ctx.fillRect(cell.x, cell.y, cellSize - 1, cellSize - 1);
+      ctx.fillRect(cell.x, cell.y, cellSize, cellSize);
     }
   });
 }
