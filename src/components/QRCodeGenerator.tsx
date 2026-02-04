@@ -219,7 +219,8 @@ export default function QRCodeGenerator() {
   ) => {
     try {
       setError(null);
-      const compositeCanvas = await generateCompositeQR(text, color, 200, settings);
+      // Generate with transparent background for preview
+      const compositeCanvas = await generateCompositeQR(text, color, 200, settings, true);
       if (!compositeCanvas) {
         throw new Error("Failed to generate");
       }
@@ -451,13 +452,24 @@ export default function QRCodeGenerator() {
 
       <div className="flex flex-col items-center">
         {/* QR Code Display */}
-        <div className="w-[350px] h-[350px] bg-gray-50 rounded-xl flex items-center justify-center mb-6 border-2 border-dashed border-gray-200 overflow-hidden">
+        <div
+          className="w-[350px] h-[350px] rounded-xl flex items-center justify-center mb-6 border-2 border-gray-200 overflow-hidden"
+          style={{
+            backgroundImage: compositeDataUrl
+              ? "linear-gradient(45deg, #e5e5e5 25%, transparent 25%), linear-gradient(-45deg, #e5e5e5 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e5e5 75%), linear-gradient(-45deg, transparent 75%, #e5e5e5 75%)"
+              : "none",
+            backgroundSize: "20px 20px",
+            backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
+            backgroundColor: compositeDataUrl ? "#ffffff" : "#f9fafb"
+          }}
+        >
           {compositeDataUrl ? (
-            <div className="flex items-center justify-center">
+            <div className="flex items-center justify-center w-full h-full">
               <img
                 src={compositeDataUrl}
                 alt="Generated QR Code"
-                className="-rotate-[135deg] max-w-[280px] max-h-[280px]"
+                className="-rotate-[135deg]"
+                style={{ maxWidth: "85%", maxHeight: "85%", objectFit: "contain" }}
               />
             </div>
           ) : (
