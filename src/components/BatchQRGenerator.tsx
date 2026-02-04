@@ -21,12 +21,6 @@ interface QRSettings {
   size: number;
 }
 
-interface URLEntry {
-  id: string;
-  url: string;
-  settings: QRSettings;
-}
-
 const DEFAULT_SETTINGS: QRSettings = {
   color: "#000000",
   distance: 50,
@@ -128,49 +122,42 @@ async function generateQRCodeBase64(
 }
 
 export default function BatchQRGenerator() {
-  const [entries, setEntries] = useState<URLEntry[]>([
-    { id: crypto.randomUUID(), url: "", settings: { ...DEFAULT_SETTINGS } },
-  ]);
-  const [globalSettings, setGlobalSettings] = useState<QRSettings>({ ...DEFAULT_SETTINGS });
+  const [urlText, setUrlText] = useState("");
+  const [settings, setSettings] = useState<QRSettings>({ ...DEFAULT_SETTINGS });
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [urlCount, setUrlCount] = useState(0);
 
-  const addEntry = () => {
-    setEntries([
-      ...entries,
-      { id: crypto.randomUUID(), url: "", settings: { ...DEFAULT_SETTINGS } },
-    ]);
-  };
-
-  const removeEntry = (id: string) => {
-    if (entries.length > 1) {
-      setEntries(entries.filter((e) => e.id !== id));
+  // Parse URLs from text
+  const parseUrls = useCallback((text: string, removeEmpty: boolean = true): string[] => {
+    let lines = text.split("\n");
+    if (removeEmpty) {
+      lines = lines.filter((line) => line.trim() !== "");
     }
+    return lines.map((line) => line.trim());
+  }, []);
+
+  // Update URL count when text changes
+  const handleTextChange = (text: string) => {
+    setUrlText(text);
+    const urls = parseUrls(text, true);
+    setUrlCount(urls.length);
   };
 
-  const updateEntryUrl = (id: string, url: string) => {
-    setEntries(entries.map((e) => (e.id === id ? { ...e, url } : e)));
+  // Remove empty lines from textarea
+  const removeEmptyLines = () => {
+    const urls = parseUrls(urlText, true);
+    setUrlText(urls.join("\n"));
+    setUrlCount(urls.length);
   };
 
-  const updateEntrySetting = (id: string, key: keyof QRSettings, value: string | number) => {
-    setEntries(
-      entries.map((e) =>
-        e.id === id ? { ...e, settings: { ...e.settings, [key]: value } } : e
-      )
-    );
-  };
-
-  const applyGlobalSettings = () => {
-    setEntries(entries.map((e) => ({ ...e, settings: { ...globalSettings } })));
-  };
-
-  const updateGlobalSetting = (key: keyof QRSettings, value: string | number) => {
-    setGlobalSettings((prev) => ({ ...prev, [key]: value }));
+  const updateSetting = (key: keyof QRSettings, value: string | number) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
   const generateXLSX = useCallback(async () => {
-    const validEntries = entries.filter((e) => e.url.trim());
-    if (validEntries.length === 0) {
+    const urls = parseUrls(urlText, true);
+    if (urls.length === 0) {
       setError("Veuillez entrer au moins une URL valide.");
       return;
     }
@@ -185,12 +172,14 @@ export default function BatchQRGenerator() {
 
       const data: { URL: string; QRCode: string }[] = [];
 
-      for (const entry of validEntries) {
-        const qrBase64 = await generateQRCodeBase64(entry.url, entry.settings);
-        data.push({
-          URL: entry.url,
-          QRCode: qrBase64,
-        });
+      for (const url of urls) {
+        if (url.trim()) {
+          const qrBase64 = await generateQRCodeBase64(url, settings);
+          data.push({
+            URL: url,
+            QRCode: qrBase64,
+          });
+        }
       }
 
       // Create workbook
@@ -213,180 +202,143 @@ export default function BatchQRGenerator() {
     } finally {
       setIsGenerating(false);
     }
-  }, [entries]);
+  }, [urlText, settings, parseUrls]);
 
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8 max-w-4xl w-full">
       <h1 className="text-2xl font-bold text-gray-800 mb-6">Génération en lot</h1>
 
+      {/* URL Text Area */}
+      <div className="mb-6">
+        <div className="flex justify-between items-center mb-2">
+          <label className="block text-sm font-medium text-gray-700">
+            Liste des URLs (une par ligne)
+          </label>
+          <span className="text-sm text-gray-500">
+            {urlCount} URL{urlCount > 1 ? "s" : ""} détectée{urlCount > 1 ? "s" : ""}
+          </span>
+        </div>
+        <textarea
+          value={urlText}
+          onChange={(e) => handleTextChange(e.target.value)}
+          placeholder="https://example1.com&#10;https://example2.com&#10;https://example3.com"
+          className="w-full h-48 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-gray-800 placeholder-gray-400 font-mono text-sm resize-y"
+        />
+        <button
+          onClick={removeEmptyLines}
+          className="mt-2 text-sm text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          Supprimer les lignes vides
+        </button>
+      </div>
+
       {/* Global Settings */}
       <div className="mb-8 p-4 bg-gray-50 rounded-xl">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-gray-700">Paramètres globaux</h2>
-          <button
-            onClick={applyGlobalSettings}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-medium"
-          >
-            Appliquer à tous
-          </button>
-        </div>
+        <h2 className="text-lg font-semibold text-gray-700 mb-4">Paramètres (appliqués à tous)</h2>
 
-        {/* Global Color Picker */}
+        {/* Color Picker */}
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-600 mb-2">Couleur</label>
+          <label className="block text-sm font-medium text-gray-600 mb-2">Couleur du QR Code</label>
           <div className="flex flex-wrap gap-2 mb-2">
             {PRESET_COLORS.map((color) => (
               <button
                 key={color.hex}
-                onClick={() => updateGlobalSetting("color", color.hex)}
-                className={`w-6 h-6 rounded-full border-2 transition-all hover:scale-110 ${
-                  globalSettings.color === color.hex
-                    ? "border-gray-800 ring-2 ring-offset-1 ring-gray-400"
+                onClick={() => updateSetting("color", color.hex)}
+                className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
+                  settings.color === color.hex
+                    ? "border-gray-800 ring-2 ring-offset-2 ring-gray-400"
                     : "border-gray-200"
                 }`}
                 style={{ backgroundColor: color.hex }}
                 title={color.name}
               />
             ))}
-            <input
-              type="color"
-              value={globalSettings.color}
-              onChange={(e) => updateGlobalSetting("color", e.target.value)}
-              className="w-6 h-6 rounded cursor-pointer border border-gray-300"
-            />
+            <div className="flex items-center gap-2 ml-2">
+              <input
+                type="color"
+                value={settings.color}
+                onChange={(e) => updateSetting("color", e.target.value)}
+                className="w-8 h-8 rounded cursor-pointer border border-gray-300"
+              />
+              <input
+                type="text"
+                value={settings.color.toUpperCase()}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  if (/^#[0-9A-Fa-f]{0,6}$/.test(value)) {
+                    updateSetting("color", value);
+                  }
+                }}
+                className="w-24 px-2 py-1 border border-gray-300 rounded text-sm font-mono"
+                maxLength={7}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Global Sliders */}
-        <div className="grid grid-cols-3 gap-4">
+        {/* Sliders */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Distance Slider */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Distance ({globalSettings.distance}%)</label>
+            <div className="flex justify-between text-xs text-gray-500 mb-1">
+              <span>Distance</span>
+              <span>
+                {settings.distance < 50
+                  ? `Proche (${settings.distance}%)`
+                  : settings.distance > 50
+                    ? `Éloigné (${settings.distance}%)`
+                    : "Base (50%)"}
+              </span>
+            </div>
             <input
               type="range"
               min="0"
               max="100"
-              value={globalSettings.distance}
-              onChange={(e) => updateGlobalSetting("distance", Number(e.target.value))}
+              value={settings.distance}
+              onChange={(e) => updateSetting("distance", Number(e.target.value))}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
             />
+            <div className="flex justify-between text-xs text-gray-400 mt-1">
+              <span>Proche</span>
+              <span>Éloigné</span>
+            </div>
           </div>
+
+          {/* Cell Size Slider */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Taille carrés ({globalSettings.cellSize}%)</label>
+            <div className="flex justify-between text-xs text-gray-500 mb-1">
+              <span>Taille des carrés</span>
+              <span>{settings.cellSize}%</span>
+            </div>
             <input
               type="range"
               min="2"
               max="15"
-              value={globalSettings.cellSize}
-              onChange={(e) => updateGlobalSetting("cellSize", Number(e.target.value))}
+              value={settings.cellSize}
+              onChange={(e) => updateSetting("cellSize", Number(e.target.value))}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
             />
           </div>
+
+          {/* Half Circle Size Slider */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Taille demi-cercles ({globalSettings.size}%)</label>
+            <div className="flex justify-between text-xs text-gray-500 mb-1">
+              <span>Taille demi-cercles</span>
+              <span>{settings.size}%</span>
+            </div>
             <input
               type="range"
               min="25"
               max="100"
-              value={globalSettings.size}
-              onChange={(e) => updateGlobalSetting("size", Number(e.target.value))}
+              value={settings.size}
+              onChange={(e) => updateSetting("size", Number(e.target.value))}
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
             />
           </div>
         </div>
-      </div>
-
-      {/* URL Entries */}
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold text-gray-700 mb-4">Liste des URLs</h2>
-
-        <div className="space-y-4">
-          {entries.map((entry, index) => (
-            <div key={entry.id} className="p-4 border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-3 mb-3">
-                <span className="text-sm font-medium text-gray-500 w-8">#{index + 1}</span>
-                <input
-                  type="text"
-                  value={entry.url}
-                  onChange={(e) => updateEntryUrl(entry.id, e.target.value)}
-                  placeholder="https://example.com"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-800 text-sm"
-                />
-                <button
-                  onClick={() => removeEntry(entry.id)}
-                  disabled={entries.length === 1}
-                  className={`p-2 rounded-lg transition-all ${
-                    entries.length === 1
-                      ? "text-gray-300 cursor-not-allowed"
-                      : "text-red-500 hover:bg-red-50"
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Individual Settings */}
-              <div className="flex items-center gap-4 pl-11">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500">Couleur:</span>
-                  <input
-                    type="color"
-                    value={entry.settings.color}
-                    onChange={(e) => updateEntrySetting(entry.id, "color", e.target.value)}
-                    className="w-6 h-6 rounded cursor-pointer border border-gray-300"
-                  />
-                </div>
-                <div className="flex items-center gap-2 flex-1">
-                  <span className="text-xs text-gray-500">Dist:</span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={entry.settings.distance}
-                    onChange={(e) => updateEntrySetting(entry.id, "distance", Number(e.target.value))}
-                    className="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
-                  <span className="text-xs text-gray-400 w-8">{entry.settings.distance}%</span>
-                </div>
-                <div className="flex items-center gap-2 flex-1">
-                  <span className="text-xs text-gray-500">Carrés:</span>
-                  <input
-                    type="range"
-                    min="2"
-                    max="15"
-                    value={entry.settings.cellSize}
-                    onChange={(e) => updateEntrySetting(entry.id, "cellSize", Number(e.target.value))}
-                    className="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
-                  <span className="text-xs text-gray-400 w-8">{entry.settings.cellSize}%</span>
-                </div>
-                <div className="flex items-center gap-2 flex-1">
-                  <span className="text-xs text-gray-500">Taille:</span>
-                  <input
-                    type="range"
-                    min="25"
-                    max="100"
-                    value={entry.settings.size}
-                    onChange={(e) => updateEntrySetting(entry.id, "size", Number(e.target.value))}
-                    className="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                  />
-                  <span className="text-xs text-gray-400 w-8">{entry.settings.size}%</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <button
-          onClick={addEntry}
-          className="mt-4 w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-500 transition-all flex items-center justify-center gap-2"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          Ajouter une URL
-        </button>
       </div>
 
       {error && (
@@ -398,10 +350,10 @@ export default function BatchQRGenerator() {
       {/* Generate Button */}
       <button
         onClick={generateXLSX}
-        disabled={isGenerating}
-        className={`w-full py-3 px-6 rounded-lg font-medium transition-all ${
-          isGenerating
-            ? "bg-gray-400 text-white cursor-wait"
+        disabled={isGenerating || urlCount === 0}
+        className={`w-full py-4 px-6 rounded-lg font-medium transition-all text-lg ${
+          isGenerating || urlCount === 0
+            ? "bg-gray-300 text-gray-500 cursor-not-allowed"
             : "bg-green-600 hover:bg-green-700 text-white shadow-lg hover:shadow-xl"
         }`}
       >
@@ -411,12 +363,23 @@ export default function BatchQRGenerator() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            Génération en cours...
+            Génération en cours... ({urlCount} QR codes)
           </span>
         ) : (
-          "Générer le fichier Excel"
+          <>
+            <span className="flex items-center justify-center gap-2">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Générer et exporter en Excel ({urlCount} URL{urlCount > 1 ? "s" : ""})
+            </span>
+          </>
         )}
       </button>
+
+      <p className="mt-4 text-center text-sm text-gray-500">
+        Le fichier Excel contiendra 2 colonnes : URL et QR Code (base64)
+      </p>
     </div>
   );
 }
