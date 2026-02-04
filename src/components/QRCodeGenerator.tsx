@@ -58,8 +58,8 @@ function drawHalfCirclePattern(
 }
 
 interface HalfCircleSettings {
-  distance: number;      // Distance from QR code (0-50)
-  cellSize: number;      // Size of squares in half circles (4-20)
+  distance: number;      // Distance from QR code (0-100, 50 = base position)
+  cellSize: number;      // Size of squares in half circles (2-15)
   size: number;          // Size of half circles as percentage of QR width (25-100)
 }
 
@@ -69,7 +69,7 @@ export default function QRCodeGenerator() {
   const [error, setError] = useState<string | null>(null);
   const [qrColor, setQrColor] = useState("#000000");
   const [halfCircleSettings, setHalfCircleSettings] = useState<HalfCircleSettings>({
-    distance: 0,
+    distance: 50,  // 50 = base position, <50 = closer, >50 = farther
     cellSize: 8,
     size: 50,
   });
@@ -79,7 +79,8 @@ export default function QRCodeGenerator() {
     text: string,
     color: string,
     size: number,
-    settings: HalfCircleSettings
+    settings: HalfCircleSettings,
+    transparent: boolean = false
   ) => {
     try {
       // Create QR code canvas
@@ -89,28 +90,31 @@ export default function QRCodeGenerator() {
         margin: 2,
         color: {
           dark: color,
-          light: "#ffffff",
+          light: transparent ? "#00000000" : "#ffffff",
         },
       });
 
       // Calculate half circle radius based on size percentage
       const halfCircleRadius = (size * settings.size) / 100;
-      // Scale distance relative to QR size
-      const scaledDistance = (settings.distance / 100) * size;
+      // Scale distance relative to QR size (50 = base, <50 = closer, >50 = farther)
+      const scaledDistance = ((settings.distance - 50) / 100) * size;
       // Scale cell size relative to QR size
       const scaledCellSize = Math.max(2, (settings.cellSize / 100) * size);
 
       // Create composite canvas with extra space for half circles
-      const compositeSize = size + halfCircleRadius + scaledDistance;
+      const maxDistance = Math.max(0, scaledDistance);
+      const compositeSize = size + halfCircleRadius + maxDistance;
       const compositeCanvas = document.createElement("canvas");
       compositeCanvas.width = compositeSize;
       compositeCanvas.height = compositeSize;
       const ctx = compositeCanvas.getContext("2d");
       if (!ctx) return null;
 
-      // Fill with white background
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, compositeSize, compositeSize);
+      // Fill with background (white for preview, transparent for download)
+      if (!transparent) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, compositeSize, compositeSize);
+      }
 
       // Draw QR code
       ctx.drawImage(qrCanvas, 0, 0);
@@ -175,7 +179,8 @@ export default function QRCodeGenerator() {
 
     try {
       const qrSize = 400;
-      const compositeCanvas = await generateCompositeQR(url, qrColor, qrSize, halfCircleSettings);
+      // Generate with transparent background for download
+      const compositeCanvas = await generateCompositeQR(url, qrColor, qrSize, halfCircleSettings, true);
       if (!compositeCanvas) {
         throw new Error("Failed to generate");
       }
@@ -190,9 +195,7 @@ export default function QRCodeGenerator() {
       const ctx = finalCanvas.getContext("2d");
       if (!ctx) return;
 
-      // Fill with white background
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, diagonal, diagonal);
+      // Keep transparent background (no fill)
 
       // Rotate -135 degrees (counter-clockwise) around center
       ctx.translate(diagonal / 2, diagonal / 2);
@@ -306,16 +309,27 @@ export default function QRCodeGenerator() {
         <div>
           <div className="flex justify-between text-xs text-gray-500 mb-1">
             <span>Distance du QR code</span>
-            <span>{halfCircleSettings.distance}%</span>
+            <span>
+              {halfCircleSettings.distance < 50
+                ? `Proche (${halfCircleSettings.distance}%)`
+                : halfCircleSettings.distance > 50
+                  ? `Éloigné (${halfCircleSettings.distance}%)`
+                  : "Base (50%)"}
+            </span>
           </div>
           <input
             type="range"
             min="0"
-            max="50"
+            max="100"
             value={halfCircleSettings.distance}
             onChange={(e) => updateSetting("distance", Number(e.target.value))}
             className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
           />
+          <div className="flex justify-between text-xs text-gray-400 mt-1">
+            <span>Proche</span>
+            <span>Base</span>
+            <span>Éloigné</span>
+          </div>
         </div>
 
         {/* Cell Size Slider */}
