@@ -1,7 +1,38 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import QRCode from "qrcode";
+
+const STORAGE_KEY = "qrcode-generator-settings";
+
+interface StoredSettings {
+  color: string;
+  distance: number;
+  cellSize: number;
+  size: number;
+}
+
+function loadStoredSettings(): StoredSettings | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null;
+}
+
+function saveSettings(settings: StoredSettings) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 const PRESET_COLORS = [
   { name: "Noir", hex: "#000000" },
@@ -72,12 +103,12 @@ function drawHalfCirclePattern(
 async function generateQRCodeBase64(
   text: string,
   settings: QRSettings,
-  qrSize: number = 150  // Reduced size for smaller base64
+  qrSize: number = 200
 ): Promise<string> {
   const qrCanvas = document.createElement("canvas");
   await QRCode.toCanvas(qrCanvas, text, {
     width: qrSize,
-    margin: 1,  // Reduced margin
+    margin: 2,
     color: {
       dark: settings.color,
       light: "#ffffff",
@@ -118,8 +149,8 @@ async function generateQRCodeBase64(
   finalCtx.translate(-compositeSize / 2, -compositeSize / 2);
   finalCtx.drawImage(compositeCanvas, 0, 0);
 
-  // Use JPEG with compression for smaller file size (stays under Excel 32767 char limit)
-  return finalCanvas.toDataURL("image/jpeg", 0.7);
+  // Return PNG base64 (without the data:image/png;base64, prefix for exceljs)
+  return finalCanvas.toDataURL("image/png");
 }
 
 export default function BatchQRGenerator() {
@@ -128,6 +159,33 @@ export default function BatchQRGenerator() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [urlCount, setUrlCount] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Load stored settings on mount
+  useEffect(() => {
+    const stored = loadStoredSettings();
+    if (stored) {
+      setSettings({
+        color: stored.color,
+        distance: stored.distance,
+        cellSize: stored.cellSize,
+        size: stored.size,
+      });
+    }
+    setIsInitialized(true);
+  }, []);
+
+  // Save settings when they change (after initialization)
+  useEffect(() => {
+    if (!isInitialized) return;
+    saveSettings({
+      color: settings.color,
+      distance: settings.distance,
+      cellSize: settings.cellSize,
+      size: settings.size,
+    });
+  }, [settings, isInitialized]);
 
   // Parse URLs from text
   const parseUrls = useCallback((text: string, removeEmpty: boolean = true): string[] => {
@@ -165,43 +223,71 @@ export default function BatchQRGenerator() {
 
     setIsGenerating(true);
     setError(null);
+    setProgress(0);
 
     try {
-      // Dynamic import of xlsx to avoid Next.js build issues
+      // Dynamic import of exceljs
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const XLSX = (await import("xlsx" as any)) as any;
+      const ExcelJS = (await import("exceljs" as any)) as any;
 
-      const data: { URL: string; QRCode: string }[] = [];
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("QR Codes");
 
-      for (const url of urls) {
+      // Set column widths
+      worksheet.columns = [
+        { header: "URL", key: "url", width: 50 },
+        { header: "QR Code", key: "qrcode", width: 30 },
+      ];
+
+      // Style header row
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.getRow(1).height = 20;
+
+      // Generate QR codes and add to worksheet
+      for (let i = 0; i < urls.length; i++) {
+        const url = urls[i];
         if (url.trim()) {
           const qrBase64 = await generateQRCodeBase64(url, settings);
-          data.push({
-            URL: url,
-            QRCode: qrBase64,
+
+          // Add row with URL
+          const rowNumber = i + 2; // +2 because row 1 is header
+          worksheet.addRow({ url: url, qrcode: "" });
+
+          // Set row height to fit image
+          worksheet.getRow(rowNumber).height = 150;
+
+          // Add image
+          const imageId = workbook.addImage({
+            base64: qrBase64,
+            extension: "png",
           });
+
+          worksheet.addImage(imageId, {
+            tl: { col: 1, row: rowNumber - 1 },
+            ext: { width: 180, height: 180 },
+          });
+
+          setProgress(Math.round(((i + 1) / urls.length) * 100));
         }
       }
 
-      // Create workbook
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(data);
+      // Generate buffer and download
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "qrcodes.xlsx";
+      link.click();
+      URL.revokeObjectURL(link.href);
 
-      // Adjust column widths
-      ws["!cols"] = [
-        { wch: 50 }, // URL column
-        { wch: 80 }, // QR Code column (base64 is long)
-      ];
-
-      XLSX.utils.book_append_sheet(wb, ws, "QR Codes");
-
-      // Download
-      XLSX.writeFile(wb, "qrcodes.xlsx");
     } catch (err) {
       setError("Erreur lors de la génération du fichier Excel.");
       console.error(err);
     } finally {
       setIsGenerating(false);
+      setProgress(0);
     }
   }, [urlText, settings, parseUrls]);
 
@@ -348,6 +434,22 @@ export default function BatchQRGenerator() {
         </div>
       )}
 
+      {/* Progress Bar */}
+      {isGenerating && (
+        <div className="mb-4">
+          <div className="flex justify-between text-sm text-gray-600 mb-1">
+            <span>Génération en cours...</span>
+            <span>{progress}%</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-2">
+            <div
+              className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Generate Button */}
       <button
         onClick={generateXLSX}
@@ -364,22 +466,20 @@ export default function BatchQRGenerator() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
-            Génération en cours... ({urlCount} QR codes)
+            Génération en cours... ({progress}%)
           </span>
         ) : (
-          <>
-            <span className="flex items-center justify-center gap-2">
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Générer et exporter en Excel ({urlCount} URL{urlCount > 1 ? "s" : ""})
-            </span>
-          </>
+          <span className="flex items-center justify-center gap-2">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Générer et exporter en Excel ({urlCount} URL{urlCount > 1 ? "s" : ""})
+          </span>
         )}
       </button>
 
       <p className="mt-4 text-center text-sm text-gray-500">
-        Le fichier Excel contiendra 2 colonnes : URL et QR Code (base64)
+        Le fichier Excel contiendra les URLs et les images QR code
       </p>
     </div>
   );

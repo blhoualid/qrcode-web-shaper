@@ -3,6 +3,37 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import QRCode from "qrcode";
 
+const STORAGE_KEY = "qrcode-generator-settings";
+
+interface StoredSettings {
+  color: string;
+  distance: number;
+  cellSize: number;
+  size: number;
+}
+
+function loadStoredSettings(): StoredSettings | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch {
+    // Ignore parse errors
+  }
+  return null;
+}
+
+function saveSettings(settings: StoredSettings) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  } catch {
+    // Ignore storage errors
+  }
+}
+
 const PRESET_COLORS = [
   { name: "Noir", hex: "#000000" },
   { name: "Bleu", hex: "#2563eb" },
@@ -74,6 +105,32 @@ export default function QRCodeGenerator() {
     size: 50,
   });
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Load stored settings on mount
+  useEffect(() => {
+    const stored = loadStoredSettings();
+    if (stored) {
+      setQrColor(stored.color);
+      setHalfCircleSettings({
+        distance: stored.distance,
+        cellSize: stored.cellSize,
+        size: stored.size,
+      });
+    }
+    setIsInitialized(true);
+  }, []);
+
+  // Save settings when they change (after initialization)
+  useEffect(() => {
+    if (!isInitialized) return;
+    saveSettings({
+      color: qrColor,
+      distance: halfCircleSettings.distance,
+      cellSize: halfCircleSettings.cellSize,
+      size: halfCircleSettings.size,
+    });
+  }, [qrColor, halfCircleSettings, isInitialized]);
 
   const generateCompositeQR = useCallback(async (
     text: string,
