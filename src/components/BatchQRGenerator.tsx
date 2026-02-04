@@ -10,6 +10,7 @@ interface StoredSettings {
   distance: number;
   cellSize: number;
   size: number;
+  seed: number;
 }
 
 function loadStoredSettings(): StoredSettings | null {
@@ -50,6 +51,7 @@ interface QRSettings {
   distance: number;
   cellSize: number;
   size: number;
+  seed: number;
 }
 
 const DEFAULT_SETTINGS: QRSettings = {
@@ -57,6 +59,7 @@ const DEFAULT_SETTINGS: QRSettings = {
   distance: 50,
   cellSize: 8,
   size: 50,
+  seed: 1,
 };
 
 // Draw QR-style pattern in a half circle
@@ -67,7 +70,8 @@ function drawHalfCirclePattern(
   radius: number,
   color: string,
   cellSize: number,
-  direction: "right" | "bottom"
+  direction: "right" | "bottom",
+  seed: number = 1
 ) {
   const cells: { x: number; y: number }[] = [];
 
@@ -92,7 +96,7 @@ function drawHalfCirclePattern(
 
   ctx.fillStyle = color;
   cells.forEach((cell) => {
-    const hash = Math.sin(cell.x * 12.9898 + cell.y * 78.233) * 43758.5453;
+    const hash = Math.sin(cell.x * 12.9898 + cell.y * 78.233 + seed * 47.123) * 43758.5453;
     const shouldFill = (hash - Math.floor(hash)) > 0.45;
     if (shouldFill) {
       ctx.fillRect(cell.x, cell.y, cellSize, cellSize);
@@ -131,8 +135,8 @@ async function generateQRCodeBase64(
   ctx.fillRect(0, 0, compositeSize, compositeSize);
   ctx.drawImage(qrCanvas, 0, 0);
 
-  drawHalfCirclePattern(ctx, qrSize + scaledDistance, qrSize / 2, halfCircleRadius, settings.color, scaledCellSize, "right");
-  drawHalfCirclePattern(ctx, qrSize / 2, qrSize + scaledDistance, halfCircleRadius, settings.color, scaledCellSize, "bottom");
+  drawHalfCirclePattern(ctx, qrSize + scaledDistance, qrSize / 2, halfCircleRadius, settings.color, scaledCellSize, "right", settings.seed);
+  drawHalfCirclePattern(ctx, qrSize / 2, qrSize + scaledDistance, halfCircleRadius, settings.color, scaledCellSize, "bottom", settings.seed);
 
   // Rotate
   const diagonal = Math.ceil(Math.sqrt(2) * compositeSize);
@@ -171,6 +175,7 @@ export default function BatchQRGenerator() {
         distance: stored.distance,
         cellSize: stored.cellSize,
         size: stored.size,
+        seed: stored.seed ?? 1,
       });
     }
     setIsInitialized(true);
@@ -184,6 +189,7 @@ export default function BatchQRGenerator() {
       distance: settings.distance,
       cellSize: settings.cellSize,
       size: settings.size,
+      seed: settings.seed,
     });
   }, [settings, isInitialized]);
 
@@ -425,6 +431,19 @@ export default function BatchQRGenerator() {
               className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
             />
           </div>
+        </div>
+
+        {/* Regenerate Pattern Button */}
+        <div className="flex justify-center mt-4">
+          <button
+            onClick={() => updateSetting("seed", Math.floor(Math.random() * 10000))}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Régénérer le motif
+          </button>
         </div>
       </div>
 

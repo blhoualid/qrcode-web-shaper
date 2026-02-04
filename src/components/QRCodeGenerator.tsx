@@ -10,6 +10,7 @@ interface StoredSettings {
   distance: number;
   cellSize: number;
   size: number;
+  seed: number;
 }
 
 function loadStoredSettings(): StoredSettings | null {
@@ -53,7 +54,8 @@ function drawHalfCirclePattern(
   radius: number,
   color: string,
   cellSize: number,
-  direction: "right" | "bottom"
+  direction: "right" | "bottom",
+  seed: number = 1
 ) {
   const cells: { x: number; y: number }[] = [];
 
@@ -77,10 +79,10 @@ function drawHalfCirclePattern(
     }
   }
 
-  // Draw cells with QR-like pattern (pseudo-random based on position)
+  // Draw cells with QR-like pattern (pseudo-random based on position and seed)
   ctx.fillStyle = color;
   cells.forEach((cell) => {
-    const hash = Math.sin(cell.x * 12.9898 + cell.y * 78.233) * 43758.5453;
+    const hash = Math.sin(cell.x * 12.9898 + cell.y * 78.233 + seed * 47.123) * 43758.5453;
     const shouldFill = (hash - Math.floor(hash)) > 0.45;
     if (shouldFill) {
       ctx.fillRect(cell.x, cell.y, cellSize, cellSize);
@@ -92,6 +94,7 @@ interface HalfCircleSettings {
   distance: number;      // Distance from QR code (0-100, 50 = base position)
   cellSize: number;      // Size of squares in half circles (2-15)
   size: number;          // Size of half circles as percentage of QR width (25-100)
+  seed: number;          // Seed for random pattern generation
 }
 
 export default function QRCodeGenerator() {
@@ -103,6 +106,7 @@ export default function QRCodeGenerator() {
     distance: 50,  // 50 = base position, <50 = closer, >50 = farther
     cellSize: 8,
     size: 50,
+    seed: 1,
   });
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -116,6 +120,7 @@ export default function QRCodeGenerator() {
         distance: stored.distance,
         cellSize: stored.cellSize,
         size: stored.size,
+        seed: stored.seed ?? 1,
       });
     }
     setIsInitialized(true);
@@ -129,6 +134,7 @@ export default function QRCodeGenerator() {
       distance: halfCircleSettings.distance,
       cellSize: halfCircleSettings.cellSize,
       size: halfCircleSettings.size,
+      seed: halfCircleSettings.seed,
     });
   }, [qrColor, halfCircleSettings, isInitialized]);
 
@@ -184,7 +190,8 @@ export default function QRCodeGenerator() {
         halfCircleRadius,
         color,
         scaledCellSize,
-        "right"
+        "right",
+        settings.seed
       );
 
       // Draw half circle on the bottom of the QR code
@@ -195,7 +202,8 @@ export default function QRCodeGenerator() {
         halfCircleRadius,
         color,
         scaledCellSize,
-        "bottom"
+        "bottom",
+        settings.seed
       );
 
       return compositeCanvas;
@@ -419,6 +427,19 @@ export default function QRCodeGenerator() {
             onChange={(e) => updateSetting("size", Number(e.target.value))}
             className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
           />
+        </div>
+
+        {/* Regenerate Pattern Button */}
+        <div className="md:col-span-3 flex justify-center mt-2">
+          <button
+            onClick={() => updateSetting("seed", Math.floor(Math.random() * 10000))}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Régénérer le motif
+          </button>
         </div>
       </div>
 
