@@ -12,6 +12,9 @@ interface StoredSettings {
   size: number;
   seed: number;
   previewBg: string;
+  previewZoom: number;
+  previewX: number;
+  previewY: number;
 }
 
 function loadStoredSettings(): StoredSettings | null {
@@ -113,6 +116,10 @@ export default function QRCodeGenerator() {
   const [error, setError] = useState<string | null>(null);
   const [qrColor, setQrColor] = useState("#000000");
   const [previewBg, setPreviewBg] = useState("checkered");
+  const [previewZoom, setPreviewZoom] = useState(1);
+  const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [halfCircleSettings, setHalfCircleSettings] = useState<HalfCircleSettings>({
     distance: 50,  // 50 = base position, <50 = closer, >50 = farther
     cellSize: 8,
@@ -120,6 +127,7 @@ export default function QRCodeGenerator() {
     seed: 1,
   });
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Load stored settings on mount
@@ -128,6 +136,8 @@ export default function QRCodeGenerator() {
     if (stored) {
       setQrColor(stored.color);
       setPreviewBg(stored.previewBg ?? "checkered");
+      setPreviewZoom(stored.previewZoom ?? 1);
+      setPreviewPosition({ x: stored.previewX ?? 0, y: stored.previewY ?? 0 });
       setHalfCircleSettings({
         distance: stored.distance,
         cellSize: stored.cellSize,
@@ -148,8 +158,48 @@ export default function QRCodeGenerator() {
       size: halfCircleSettings.size,
       seed: halfCircleSettings.seed,
       previewBg: previewBg,
+      previewZoom: previewZoom,
+      previewX: previewPosition.x,
+      previewY: previewPosition.y,
     });
-  }, [qrColor, halfCircleSettings, previewBg, isInitialized]);
+  }, [qrColor, halfCircleSettings, previewBg, previewZoom, previewPosition, isInitialized]);
+
+  // Mouse handlers for dragging
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!compositeDataUrl) return;
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - previewPosition.x, y: e.clientY - previewPosition.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+    setPreviewPosition({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y,
+    });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseLeave = () => {
+    setIsDragging(false);
+  };
+
+  // Wheel handler for zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    if (!compositeDataUrl) return;
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setPreviewZoom((prev) => Math.max(0.2, Math.min(3, prev + delta)));
+  };
+
+  // Reset position and zoom
+  const resetView = () => {
+    setPreviewZoom(1);
+    setPreviewPosition({ x: 0, y: 0 });
+  };
 
   const generateCompositeQR = useCallback(async (
     text: string,
@@ -479,33 +529,63 @@ export default function QRCodeGenerator() {
       )}
 
       <div className="flex flex-col items-center">
-        {/* Preview Background Selector */}
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-xs text-gray-500">Fond:</span>
-          {PREVIEW_BG_OPTIONS.map((option) => (
+        {/* Preview Controls */}
+        <div className="flex items-center gap-4 mb-3">
+          {/* Background Selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">Fond:</span>
+            {PREVIEW_BG_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                onClick={() => setPreviewBg(option.value)}
+                className={`w-6 h-6 rounded border-2 transition-all ${
+                  previewBg === option.value
+                    ? "border-blue-500 ring-2 ring-blue-200"
+                    : "border-gray-300"
+                }`}
+                style={{
+                  background: option.value === "checkered"
+                    ? "linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)"
+                    : option.value,
+                  backgroundSize: option.value === "checkered" ? "8px 8px" : undefined,
+                  backgroundPosition: option.value === "checkered" ? "0 0, 0 4px, 4px -4px, -4px 0px" : undefined,
+                  backgroundColor: option.value === "checkered" ? "#fff" : undefined,
+                }}
+                title={option.name}
+              />
+            ))}
+          </div>
+
+          {/* Zoom Controls */}
+          <div className="flex items-center gap-1">
             <button
-              key={option.value}
-              onClick={() => setPreviewBg(option.value)}
-              className={`w-6 h-6 rounded border-2 transition-all ${
-                previewBg === option.value
-                  ? "border-blue-500 ring-2 ring-blue-200"
-                  : "border-gray-300"
-              }`}
-              style={{
-                background: option.value === "checkered"
-                  ? "linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)"
-                  : option.value,
-                backgroundSize: option.value === "checkered" ? "8px 8px" : undefined,
-                backgroundPosition: option.value === "checkered" ? "0 0, 0 4px, 4px -4px, -4px 0px" : undefined,
-                backgroundColor: option.value === "checkered" ? "#fff" : undefined,
-              }}
-              title={option.name}
-            />
-          ))}
+              onClick={() => setPreviewZoom((prev) => Math.max(0.2, prev - 0.2))}
+              className="w-6 h-6 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded text-gray-600 text-sm font-bold"
+              title="Zoom -"
+            >
+              -
+            </button>
+            <span className="text-xs text-gray-500 w-12 text-center">{Math.round(previewZoom * 100)}%</span>
+            <button
+              onClick={() => setPreviewZoom((prev) => Math.min(3, prev + 0.2))}
+              className="w-6 h-6 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded text-gray-600 text-sm font-bold"
+              title="Zoom +"
+            >
+              +
+            </button>
+            <button
+              onClick={resetView}
+              className="ml-1 px-2 h-6 flex items-center justify-center bg-gray-100 hover:bg-gray-200 rounded text-gray-600 text-xs"
+              title="Réinitialiser la vue"
+            >
+              Reset
+            </button>
+          </div>
         </div>
 
         {/* QR Code Display */}
         <div
+          ref={previewContainerRef}
           className="w-[350px] h-[350px] rounded-xl flex items-center justify-center mb-6 border-2 border-gray-200 overflow-hidden"
           style={{
             backgroundImage: previewBg === "checkered"
@@ -513,15 +593,32 @@ export default function QRCodeGenerator() {
               : "none",
             backgroundSize: "20px 20px",
             backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
-            backgroundColor: previewBg === "checkered" ? "#ffffff" : (compositeDataUrl ? previewBg : "#f9fafb")
+            backgroundColor: previewBg === "checkered" ? "#ffffff" : (compositeDataUrl ? previewBg : "#f9fafb"),
+            cursor: compositeDataUrl ? (isDragging ? "grabbing" : "grab") : "default",
           }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseLeave}
+          onWheel={handleWheel}
         >
           {compositeDataUrl ? (
-            <div className="flex items-center justify-center w-full h-full">
+            <div
+              className="flex items-center justify-center w-full h-full"
+              style={{ pointerEvents: "none" }}
+            >
               <img
                 src={compositeDataUrl}
                 alt="Generated QR Code"
-                style={{ maxWidth: "90%", maxHeight: "90%", objectFit: "contain" }}
+                draggable={false}
+                style={{
+                  transform: `translate(${previewPosition.x}px, ${previewPosition.y}px) scale(${previewZoom})`,
+                  transition: isDragging ? "none" : "transform 0.1s ease-out",
+                  maxWidth: "90%",
+                  maxHeight: "90%",
+                  objectFit: "contain",
+                  userSelect: "none",
+                }}
               />
             </div>
           ) : (
