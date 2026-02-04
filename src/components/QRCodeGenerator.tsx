@@ -21,9 +21,9 @@ function drawHalfCirclePattern(
   centerY: number,
   radius: number,
   color: string,
+  cellSize: number,
   direction: "right" | "bottom"
 ) {
-  const cellSize = 8;
   const cells: { x: number; y: number }[] = [];
 
   // Generate grid of potential cells
@@ -57,14 +57,30 @@ function drawHalfCirclePattern(
   });
 }
 
+interface HalfCircleSettings {
+  distance: number;      // Distance from QR code (0-50)
+  cellSize: number;      // Size of squares in half circles (4-20)
+  size: number;          // Size of half circles as percentage of QR width (25-100)
+}
+
 export default function QRCodeGenerator() {
   const [url, setUrl] = useState("");
   const [compositeDataUrl, setCompositeDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qrColor, setQrColor] = useState("#000000");
+  const [halfCircleSettings, setHalfCircleSettings] = useState<HalfCircleSettings>({
+    distance: 0,
+    cellSize: 8,
+    size: 50,
+  });
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const generateCompositeQR = useCallback(async (text: string, color: string, size: number) => {
+  const generateCompositeQR = useCallback(async (
+    text: string,
+    color: string,
+    size: number,
+    settings: HalfCircleSettings
+  ) => {
     try {
       // Create QR code canvas
       const qrCanvas = document.createElement("canvas");
@@ -77,10 +93,15 @@ export default function QRCodeGenerator() {
         },
       });
 
+      // Calculate half circle radius based on size percentage
+      const halfCircleRadius = (size * settings.size) / 100;
+      // Scale distance relative to QR size
+      const scaledDistance = (settings.distance / 100) * size;
+      // Scale cell size relative to QR size
+      const scaledCellSize = Math.max(2, (settings.cellSize / 100) * size);
+
       // Create composite canvas with extra space for half circles
-      // Diameter = QR code width, so radius = size / 2
-      const halfCircleRadius = size / 2;
-      const compositeSize = size + halfCircleRadius;
+      const compositeSize = size + halfCircleRadius + scaledDistance;
       const compositeCanvas = document.createElement("canvas");
       compositeCanvas.width = compositeSize;
       compositeCanvas.height = compositeSize;
@@ -95,10 +116,26 @@ export default function QRCodeGenerator() {
       ctx.drawImage(qrCanvas, 0, 0);
 
       // Draw half circle on the right side of the QR code
-      drawHalfCirclePattern(ctx, size, size / 2, halfCircleRadius, color, "right");
+      drawHalfCirclePattern(
+        ctx,
+        size + scaledDistance,
+        size / 2,
+        halfCircleRadius,
+        color,
+        scaledCellSize,
+        "right"
+      );
 
       // Draw half circle on the bottom of the QR code
-      drawHalfCirclePattern(ctx, size / 2, size, halfCircleRadius, color, "bottom");
+      drawHalfCirclePattern(
+        ctx,
+        size / 2,
+        size + scaledDistance,
+        halfCircleRadius,
+        color,
+        scaledCellSize,
+        "bottom"
+      );
 
       return compositeCanvas;
     } catch {
@@ -106,10 +143,14 @@ export default function QRCodeGenerator() {
     }
   }, []);
 
-  const generatePreview = useCallback(async (text: string, color: string) => {
+  const generatePreview = useCallback(async (
+    text: string,
+    color: string,
+    settings: HalfCircleSettings
+  ) => {
     try {
       setError(null);
-      const compositeCanvas = await generateCompositeQR(text, color, 200);
+      const compositeCanvas = await generateCompositeQR(text, color, 200, settings);
       if (!compositeCanvas) {
         throw new Error("Failed to generate");
       }
@@ -122,19 +163,19 @@ export default function QRCodeGenerator() {
 
   useEffect(() => {
     if (url.trim()) {
-      generatePreview(url, qrColor);
+      generatePreview(url, qrColor, halfCircleSettings);
     } else {
       setCompositeDataUrl(null);
       setError(null);
     }
-  }, [url, qrColor, generatePreview]);
+  }, [url, qrColor, halfCircleSettings, generatePreview]);
 
   const downloadQRCode = async () => {
     if (!url.trim()) return;
 
     try {
       const qrSize = 400;
-      const compositeCanvas = await generateCompositeQR(url, qrColor, qrSize);
+      const compositeCanvas = await generateCompositeQR(url, qrColor, qrSize, halfCircleSettings);
       if (!compositeCanvas) {
         throw new Error("Failed to generate");
       }
@@ -172,6 +213,10 @@ export default function QRCodeGenerator() {
     if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
       setQrColor(color);
     }
+  };
+
+  const updateSetting = (key: keyof HalfCircleSettings, value: number) => {
+    setHalfCircleSettings((prev) => ({ ...prev, [key]: value }));
   };
 
   return (
@@ -248,6 +293,61 @@ export default function QRCodeGenerator() {
               maxLength={7}
             />
           </div>
+        </div>
+      </div>
+
+      {/* Half Circle Settings */}
+      <div className="mb-6 space-y-4">
+        <label className="block text-sm font-medium text-gray-700">
+          Paramètres des demi-cercles
+        </label>
+
+        {/* Distance Slider */}
+        <div>
+          <div className="flex justify-between text-xs text-gray-500 mb-1">
+            <span>Distance du QR code</span>
+            <span>{halfCircleSettings.distance}%</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="50"
+            value={halfCircleSettings.distance}
+            onChange={(e) => updateSetting("distance", Number(e.target.value))}
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+          />
+        </div>
+
+        {/* Cell Size Slider */}
+        <div>
+          <div className="flex justify-between text-xs text-gray-500 mb-1">
+            <span>Taille des carrés</span>
+            <span>{halfCircleSettings.cellSize}%</span>
+          </div>
+          <input
+            type="range"
+            min="2"
+            max="15"
+            value={halfCircleSettings.cellSize}
+            onChange={(e) => updateSetting("cellSize", Number(e.target.value))}
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+          />
+        </div>
+
+        {/* Half Circle Size Slider */}
+        <div>
+          <div className="flex justify-between text-xs text-gray-500 mb-1">
+            <span>Taille des demi-cercles</span>
+            <span>{halfCircleSettings.size}%</span>
+          </div>
+          <input
+            type="range"
+            min="25"
+            max="100"
+            value={halfCircleSettings.size}
+            onChange={(e) => updateSetting("size", Number(e.target.value))}
+            className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+          />
         </div>
       </div>
 
