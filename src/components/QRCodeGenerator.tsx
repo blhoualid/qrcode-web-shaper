@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import Image from "next/image";
 import QRCode from "qrcode";
 
 const PRESET_COLORS = [
@@ -15,81 +14,160 @@ const PRESET_COLORS = [
   { name: "Cyan", hex: "#0891b2" },
 ];
 
+// Draw QR-style pattern in a half circle
+function drawHalfCirclePattern(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  color: string,
+  direction: "right" | "bottom"
+) {
+  const cellSize = 8;
+  const cells: { x: number; y: number }[] = [];
+
+  // Generate grid of potential cells
+  for (let x = -radius; x <= radius; x += cellSize) {
+    for (let y = -radius; y <= radius; y += cellSize) {
+      let inHalfCircle = false;
+      const dist = Math.sqrt(x * x + y * y);
+
+      if (dist <= radius - cellSize / 2) {
+        if (direction === "right" && x >= 0) {
+          inHalfCircle = true;
+        } else if (direction === "bottom" && y >= 0) {
+          inHalfCircle = true;
+        }
+      }
+
+      if (inHalfCircle) {
+        cells.push({ x: centerX + x, y: centerY + y });
+      }
+    }
+  }
+
+  // Draw cells with QR-like pattern (pseudo-random based on position)
+  ctx.fillStyle = color;
+  cells.forEach((cell) => {
+    const hash = Math.sin(cell.x * 12.9898 + cell.y * 78.233) * 43758.5453;
+    const shouldFill = (hash - Math.floor(hash)) > 0.45;
+    if (shouldFill) {
+      ctx.fillRect(cell.x, cell.y, cellSize - 1, cellSize - 1);
+    }
+  });
+}
+
 export default function QRCodeGenerator() {
   const [url, setUrl] = useState("");
-  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+  const [compositeDataUrl, setCompositeDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qrColor, setQrColor] = useState("#000000");
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const generateQRCode = useCallback(async (text: string, color: string) => {
+  const generateCompositeQR = useCallback(async (text: string, color: string, size: number) => {
     try {
-      setError(null);
-      const dataUrl = await QRCode.toDataURL(text, {
-        width: 300,
+      // Create QR code canvas
+      const qrCanvas = document.createElement("canvas");
+      await QRCode.toCanvas(qrCanvas, text, {
+        width: size,
         margin: 2,
         color: {
           dark: color,
           light: "#ffffff",
         },
       });
-      setQrCodeDataUrl(dataUrl);
+
+      // Create composite canvas with extra space for half circles
+      const halfCircleRadius = size * 0.25;
+      const compositeSize = size + halfCircleRadius;
+      const compositeCanvas = document.createElement("canvas");
+      compositeCanvas.width = compositeSize;
+      compositeCanvas.height = compositeSize;
+      const ctx = compositeCanvas.getContext("2d");
+      if (!ctx) return null;
+
+      // Fill with white background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, compositeSize, compositeSize);
+
+      // Draw QR code
+      ctx.drawImage(qrCanvas, 0, 0);
+
+      // Draw half circle on the right side of the QR code
+      drawHalfCirclePattern(ctx, size, size / 2, halfCircleRadius, color, "right");
+
+      // Draw half circle on the bottom of the QR code
+      drawHalfCirclePattern(ctx, size / 2, size, halfCircleRadius, color, "bottom");
+
+      return compositeCanvas;
     } catch {
-      setError("Failed to generate QR code. Please try again.");
-      setQrCodeDataUrl(null);
+      return null;
     }
   }, []);
 
+  const generatePreview = useCallback(async (text: string, color: string) => {
+    try {
+      setError(null);
+      const compositeCanvas = await generateCompositeQR(text, color, 200);
+      if (!compositeCanvas) {
+        throw new Error("Failed to generate");
+      }
+      setCompositeDataUrl(compositeCanvas.toDataURL("image/png"));
+    } catch {
+      setError("Échec de la génération du QR code. Veuillez réessayer.");
+      setCompositeDataUrl(null);
+    }
+  }, [generateCompositeQR]);
+
   useEffect(() => {
     if (url.trim()) {
-      generateQRCode(url, qrColor);
+      generatePreview(url, qrColor);
     } else {
-      setQrCodeDataUrl(null);
+      setCompositeDataUrl(null);
       setError(null);
     }
-  }, [url, qrColor, generateQRCode]);
+  }, [url, qrColor, generatePreview]);
 
   const downloadQRCode = async () => {
     if (!url.trim()) return;
 
     try {
-      const qrCanvas = document.createElement("canvas");
-      await QRCode.toCanvas(qrCanvas, url, {
-        width: 400,
-        margin: 2,
-        color: {
-          dark: qrColor,
-          light: "#ffffff",
-        },
-      });
+      const qrSize = 400;
+      const compositeCanvas = await generateCompositeQR(url, qrColor, qrSize);
+      if (!compositeCanvas) {
+        throw new Error("Failed to generate");
+      }
 
-      // Create a new canvas for the rotated image
-      const rotatedCanvas = document.createElement("canvas");
-      const ctx = rotatedCanvas.getContext("2d");
+      // Calculate diagonal for rotated image to avoid cropping
+      const diagonal = Math.ceil(Math.sqrt(2) * compositeCanvas.width);
+
+      // Create final canvas with enough space for rotation
+      const finalCanvas = document.createElement("canvas");
+      finalCanvas.width = diagonal;
+      finalCanvas.height = diagonal;
+      const ctx = finalCanvas.getContext("2d");
       if (!ctx) return;
 
-      // Set canvas size to accommodate rotated image
-      const size = qrCanvas.width;
-      rotatedCanvas.width = size;
-      rotatedCanvas.height = size;
+      // Fill with white background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, diagonal, diagonal);
 
-      // Rotate -135 degrees (counter-clockwise)
-      ctx.translate(size / 2, size / 2);
+      // Rotate -135 degrees (counter-clockwise) around center
+      ctx.translate(diagonal / 2, diagonal / 2);
       ctx.rotate((-135 * Math.PI) / 180);
-      ctx.translate(-size / 2, -size / 2);
-      ctx.drawImage(qrCanvas, 0, 0);
+      ctx.translate(-compositeCanvas.width / 2, -compositeCanvas.height / 2);
+      ctx.drawImage(compositeCanvas, 0, 0);
 
       const link = document.createElement("a");
       link.download = "qrcode.png";
-      link.href = rotatedCanvas.toDataURL("image/png");
+      link.href = finalCanvas.toDataURL("image/png");
       link.click();
     } catch {
-      setError("Failed to download QR code. Please try again.");
+      setError("Échec du téléchargement. Veuillez réessayer.");
     }
   };
 
   const handleColorChange = (color: string) => {
-    // Validate hex color
     if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
       setQrColor(color);
     }
@@ -179,17 +257,14 @@ export default function QRCodeGenerator() {
       )}
 
       <div className="flex flex-col items-center">
-        {/* QR Code Display - larger container for rotated image */}
+        {/* QR Code Display */}
         <div className="w-[350px] h-[350px] bg-gray-50 rounded-xl flex items-center justify-center mb-6 border-2 border-dashed border-gray-200 overflow-hidden">
-          {qrCodeDataUrl ? (
-            <div className="w-[240px] h-[240px] flex items-center justify-center">
-              <Image
-                src={qrCodeDataUrl}
+          {compositeDataUrl ? (
+            <div className="flex items-center justify-center">
+              <img
+                src={compositeDataUrl}
                 alt="Generated QR Code"
-                width={240}
-                height={240}
-                className="-rotate-[135deg]"
-                unoptimized
+                className="-rotate-[135deg] max-w-[280px] max-h-[280px]"
               />
             </div>
           ) : (
@@ -214,9 +289,9 @@ export default function QRCodeGenerator() {
 
         <button
           onClick={downloadQRCode}
-          disabled={!qrCodeDataUrl}
+          disabled={!compositeDataUrl}
           className={`w-full py-3 px-6 rounded-lg font-medium transition-all ${
-            qrCodeDataUrl
+            compositeDataUrl
               ? "bg-blue-600 hover:bg-blue-700 text-white shadow-lg hover:shadow-xl"
               : "bg-gray-200 text-gray-400 cursor-not-allowed"
           }`}
@@ -225,7 +300,7 @@ export default function QRCodeGenerator() {
         </button>
       </div>
 
-      <canvas ref={canvasRef} className="hidden" />
+      <canvas ref={previewCanvasRef} className="hidden" />
     </div>
   );
 }
