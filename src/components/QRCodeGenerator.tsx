@@ -15,6 +15,8 @@ interface StoredSettings {
   previewZoom: number;
   previewX: number;
   previewY: number;
+  recentColors: string[];
+  lastUrl: string;
 }
 
 function loadStoredSettings(): StoredSettings | null {
@@ -115,6 +117,7 @@ export default function QRCodeGenerator() {
   const [compositeDataUrl, setCompositeDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qrColor, setQrColor] = useState("#000000");
+  const [recentColors, setRecentColors] = useState<string[]>([]);
   const [previewBg, setPreviewBg] = useState("checkered");
   const [previewZoom, setPreviewZoom] = useState(1);
   const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 });
@@ -135,6 +138,8 @@ export default function QRCodeGenerator() {
     const stored = loadStoredSettings();
     if (stored) {
       setQrColor(stored.color);
+      setRecentColors(stored.recentColors ?? []);
+      setUrl(stored.lastUrl ?? "");
       setPreviewBg(stored.previewBg ?? "checkered");
       setPreviewZoom(stored.previewZoom ?? 1);
       setPreviewPosition({ x: stored.previewX ?? 0, y: stored.previewY ?? 0 });
@@ -161,8 +166,20 @@ export default function QRCodeGenerator() {
       previewZoom: previewZoom,
       previewX: previewPosition.x,
       previewY: previewPosition.y,
+      recentColors: recentColors,
+      lastUrl: url,
     });
-  }, [qrColor, halfCircleSettings, previewBg, previewZoom, previewPosition, isInitialized]);
+  }, [qrColor, halfCircleSettings, previewBg, previewZoom, previewPosition, recentColors, url, isInitialized]);
+
+  // Add color to recent colors when it changes
+  const applyColor = (color: string) => {
+    setQrColor(color);
+    // Add to recent colors (keep last 6, avoid duplicates)
+    setRecentColors((prev) => {
+      const filtered = prev.filter((c) => c.toLowerCase() !== color.toLowerCase());
+      return [color, ...filtered].slice(0, 6);
+    });
+  };
 
   // Mouse handlers for dragging
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -358,7 +375,7 @@ export default function QRCodeGenerator() {
 
   const handleColorChange = (color: string) => {
     if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
-      setQrColor(color);
+      applyColor(color);
     }
   };
 
@@ -396,7 +413,7 @@ export default function QRCodeGenerator() {
           {PRESET_COLORS.map((color) => (
             <button
               key={color.hex}
-              onClick={() => setQrColor(color.hex)}
+              onClick={() => applyColor(color.hex)}
               className={`w-8 h-8 rounded-full border-2 transition-all hover:scale-110 ${
                 qrColor === color.hex
                   ? "border-gray-800 ring-2 ring-offset-2 ring-gray-400"
@@ -414,7 +431,7 @@ export default function QRCodeGenerator() {
             <input
               type="color"
               value={qrColor}
-              onChange={(e) => setQrColor(e.target.value)}
+              onChange={(e) => applyColor(e.target.value)}
               className="w-10 h-10 rounded cursor-pointer border border-gray-300"
             />
             <input
@@ -432,7 +449,7 @@ export default function QRCodeGenerator() {
               }}
               onBlur={(e) => {
                 if (!/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) {
-                  setQrColor("#000000");
+                  applyColor("#000000");
                 }
               }}
               placeholder="#000000"
@@ -441,6 +458,28 @@ export default function QRCodeGenerator() {
             />
           </div>
         </div>
+
+        {/* Recent Colors */}
+        {recentColors.length > 0 && (
+          <div className="mt-3">
+            <span className="text-xs text-gray-500 mb-1 block">Couleurs récentes:</span>
+            <div className="flex gap-2">
+              {recentColors.map((color, index) => (
+                <button
+                  key={`${color}-${index}`}
+                  onClick={() => setQrColor(color)}
+                  className={`w-6 h-6 rounded border-2 transition-all hover:scale-110 ${
+                    qrColor === color
+                      ? "border-gray-800 ring-1 ring-offset-1 ring-gray-400"
+                      : "border-gray-300"
+                  }`}
+                  style={{ backgroundColor: color }}
+                  title={color.toUpperCase()}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Half Circle Settings */}
