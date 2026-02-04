@@ -41,8 +41,8 @@ export default function QRCodeGenerator() {
     if (!url.trim()) return;
 
     try {
-      const canvas = document.createElement("canvas");
-      await QRCode.toCanvas(canvas, url, {
+      const qrCanvas = document.createElement("canvas");
+      await QRCode.toCanvas(qrCanvas, url, {
         width: 400,
         margin: 2,
         color: {
@@ -51,9 +51,25 @@ export default function QRCodeGenerator() {
         },
       });
 
+      // Create a new canvas for the rotated image
+      const rotatedCanvas = document.createElement("canvas");
+      const ctx = rotatedCanvas.getContext("2d");
+      if (!ctx) return;
+
+      // Set canvas size to accommodate rotated image
+      const size = qrCanvas.width;
+      rotatedCanvas.width = size;
+      rotatedCanvas.height = size;
+
+      // Rotate -135 degrees (counter-clockwise)
+      ctx.translate(size / 2, size / 2);
+      ctx.rotate((-135 * Math.PI) / 180);
+      ctx.translate(-size / 2, -size / 2);
+      ctx.drawImage(qrCanvas, 0, 0);
+
       const link = document.createElement("a");
       link.download = "qrcode.png";
-      link.href = canvas.toDataURL("image/png");
+      link.href = rotatedCanvas.toDataURL("image/png");
       link.click();
     } catch {
       setError("Failed to download QR code. Please try again.");
@@ -93,7 +109,7 @@ export default function QRCodeGenerator() {
               alt="Generated QR Code"
               width={300}
               height={300}
-              className="rounded-lg"
+              className="rounded-lg -rotate-[135deg]"
               unoptimized
             />
           ) : (
