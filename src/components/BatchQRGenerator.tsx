@@ -180,7 +180,8 @@ export default function BatchQRGenerator() {
 
     try {
       // Dynamic import of xlsx to avoid Next.js build issues
-      const XLSX = await import("xlsx");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const XLSX = (await import("xlsx" as any)) as any;
 
       const data: { URL: string; QRCode: string }[] = [];
 
