@@ -72,12 +72,12 @@ function drawHalfCirclePattern(
 async function generateQRCodeBase64(
   text: string,
   settings: QRSettings,
-  qrSize: number = 200
+  qrSize: number = 150  // Reduced size for smaller base64
 ): Promise<string> {
   const qrCanvas = document.createElement("canvas");
   await QRCode.toCanvas(qrCanvas, text, {
     width: qrSize,
-    margin: 2,
+    margin: 1,  // Reduced margin
     color: {
       dark: settings.color,
       light: "#ffffff",
@@ -118,7 +118,8 @@ async function generateQRCodeBase64(
   finalCtx.translate(-compositeSize / 2, -compositeSize / 2);
   finalCtx.drawImage(compositeCanvas, 0, 0);
 
-  return finalCanvas.toDataURL("image/png");
+  // Use JPEG with compression for smaller file size (stays under Excel 32767 char limit)
+  return finalCanvas.toDataURL("image/jpeg", 0.7);
 }
 
 export default function BatchQRGenerator() {
