@@ -11,6 +11,7 @@ interface StoredSettings {
   cellSize: number;
   size: number;
   seed: number;
+  previewBg: string;
 }
 
 function loadStoredSettings(): StoredSettings | null {
@@ -97,11 +98,21 @@ interface HalfCircleSettings {
   seed: number;          // Seed for random pattern generation
 }
 
+const PREVIEW_BG_OPTIONS = [
+  { name: "Damier", value: "checkered" },
+  { name: "Blanc", value: "#ffffff" },
+  { name: "Noir", value: "#000000" },
+  { name: "Gris", value: "#6b7280" },
+  { name: "Bleu", value: "#3b82f6" },
+  { name: "Vert", value: "#22c55e" },
+];
+
 export default function QRCodeGenerator() {
   const [url, setUrl] = useState("");
   const [compositeDataUrl, setCompositeDataUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [qrColor, setQrColor] = useState("#000000");
+  const [previewBg, setPreviewBg] = useState("checkered");
   const [halfCircleSettings, setHalfCircleSettings] = useState<HalfCircleSettings>({
     distance: 50,  // 50 = base position, <50 = closer, >50 = farther
     cellSize: 8,
@@ -116,6 +127,7 @@ export default function QRCodeGenerator() {
     const stored = loadStoredSettings();
     if (stored) {
       setQrColor(stored.color);
+      setPreviewBg(stored.previewBg ?? "checkered");
       setHalfCircleSettings({
         distance: stored.distance,
         cellSize: stored.cellSize,
@@ -135,8 +147,9 @@ export default function QRCodeGenerator() {
       cellSize: halfCircleSettings.cellSize,
       size: halfCircleSettings.size,
       seed: halfCircleSettings.seed,
+      previewBg: previewBg,
     });
-  }, [qrColor, halfCircleSettings, isInitialized]);
+  }, [qrColor, halfCircleSettings, previewBg, isInitialized]);
 
   const generateCompositeQR = useCallback(async (
     text: string,
@@ -224,7 +237,22 @@ export default function QRCodeGenerator() {
       if (!compositeCanvas) {
         throw new Error("Failed to generate");
       }
-      setCompositeDataUrl(compositeCanvas.toDataURL("image/png"));
+
+      // Apply rotation on canvas (like download) so the image is properly centered
+      const diagonal = Math.ceil(Math.sqrt(2) * compositeCanvas.width);
+      const finalCanvas = document.createElement("canvas");
+      finalCanvas.width = diagonal;
+      finalCanvas.height = diagonal;
+      const ctx = finalCanvas.getContext("2d");
+      if (!ctx) throw new Error("Could not get context");
+
+      // Rotate -135 degrees (counter-clockwise) around center
+      ctx.translate(diagonal / 2, diagonal / 2);
+      ctx.rotate((-135 * Math.PI) / 180);
+      ctx.translate(-compositeCanvas.width / 2, -compositeCanvas.height / 2);
+      ctx.drawImage(compositeCanvas, 0, 0);
+
+      setCompositeDataUrl(finalCanvas.toDataURL("image/png"));
     } catch {
       setError("Échec de la génération du QR code. Veuillez réessayer.");
       setCompositeDataUrl(null);
@@ -451,16 +479,41 @@ export default function QRCodeGenerator() {
       )}
 
       <div className="flex flex-col items-center">
+        {/* Preview Background Selector */}
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-xs text-gray-500">Fond:</span>
+          {PREVIEW_BG_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setPreviewBg(option.value)}
+              className={`w-6 h-6 rounded border-2 transition-all ${
+                previewBg === option.value
+                  ? "border-blue-500 ring-2 ring-blue-200"
+                  : "border-gray-300"
+              }`}
+              style={{
+                background: option.value === "checkered"
+                  ? "linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)"
+                  : option.value,
+                backgroundSize: option.value === "checkered" ? "8px 8px" : undefined,
+                backgroundPosition: option.value === "checkered" ? "0 0, 0 4px, 4px -4px, -4px 0px" : undefined,
+                backgroundColor: option.value === "checkered" ? "#fff" : undefined,
+              }}
+              title={option.name}
+            />
+          ))}
+        </div>
+
         {/* QR Code Display */}
         <div
           className="w-[350px] h-[350px] rounded-xl flex items-center justify-center mb-6 border-2 border-gray-200 overflow-hidden"
           style={{
-            backgroundImage: compositeDataUrl
+            backgroundImage: previewBg === "checkered"
               ? "linear-gradient(45deg, #e5e5e5 25%, transparent 25%), linear-gradient(-45deg, #e5e5e5 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e5e5e5 75%), linear-gradient(-45deg, transparent 75%, #e5e5e5 75%)"
               : "none",
             backgroundSize: "20px 20px",
             backgroundPosition: "0 0, 0 10px, 10px -10px, -10px 0px",
-            backgroundColor: compositeDataUrl ? "#ffffff" : "#f9fafb"
+            backgroundColor: previewBg === "checkered" ? "#ffffff" : (compositeDataUrl ? previewBg : "#f9fafb")
           }}
         >
           {compositeDataUrl ? (
@@ -468,8 +521,7 @@ export default function QRCodeGenerator() {
               <img
                 src={compositeDataUrl}
                 alt="Generated QR Code"
-                className="-rotate-[135deg]"
-                style={{ maxWidth: "85%", maxHeight: "85%", objectFit: "contain" }}
+                style={{ maxWidth: "90%", maxHeight: "90%", objectFit: "contain" }}
               />
             </div>
           ) : (
