@@ -78,7 +78,8 @@ export default function QRCodeGenerator() {
       });
 
       // Create composite canvas with extra space for half circles
-      const halfCircleRadius = size * 0.25;
+      // Diameter = QR code width, so radius = size / 2
+      const halfCircleRadius = size / 2;
       const compositeSize = size + halfCircleRadius;
       const compositeCanvas = document.createElement("canvas");
       compositeCanvas.width = compositeSize;
