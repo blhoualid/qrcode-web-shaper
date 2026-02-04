@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import Image from "next/image";
 import QRCode from "qrcode";
 
 export default function QRCodeGenerator() {
@@ -9,19 +10,10 @@ export default function QRCodeGenerator() {
   const [error, setError] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
-    if (url.trim()) {
-      generateQRCode();
-    } else {
-      setQrCodeDataUrl(null);
-      setError(null);
-    }
-  }, [url]);
-
-  const generateQRCode = async () => {
+  const generateQRCode = useCallback(async (text: string) => {
     try {
       setError(null);
-      const dataUrl = await QRCode.toDataURL(url, {
+      const dataUrl = await QRCode.toDataURL(text, {
         width: 300,
         margin: 2,
         color: {
@@ -30,11 +22,20 @@ export default function QRCodeGenerator() {
         },
       });
       setQrCodeDataUrl(dataUrl);
-    } catch (err) {
+    } catch {
       setError("Failed to generate QR code. Please try again.");
       setQrCodeDataUrl(null);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (url.trim()) {
+      generateQRCode(url);
+    } else {
+      setQrCodeDataUrl(null);
+      setError(null);
+    }
+  }, [url, generateQRCode]);
 
   const downloadQRCode = async () => {
     if (!url.trim()) return;
@@ -54,7 +55,7 @@ export default function QRCodeGenerator() {
       link.download = "qrcode.png";
       link.href = canvas.toDataURL("image/png");
       link.click();
-    } catch (err) {
+    } catch {
       setError("Failed to download QR code. Please try again.");
     }
   };
@@ -87,10 +88,13 @@ export default function QRCodeGenerator() {
       <div className="flex flex-col items-center">
         <div className="w-[300px] h-[300px] bg-gray-50 rounded-xl flex items-center justify-center mb-6 border-2 border-dashed border-gray-200">
           {qrCodeDataUrl ? (
-            <img
+            <Image
               src={qrCodeDataUrl}
               alt="Generated QR Code"
+              width={300}
+              height={300}
               className="rounded-lg"
+              unoptimized
             />
           ) : (
             <div className="text-gray-400 text-center px-4">
